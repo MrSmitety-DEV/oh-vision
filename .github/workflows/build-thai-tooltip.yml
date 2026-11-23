@@ -1,0 +1,65 @@
+name: Build OH Thai Tooltip
+
+on:
+  push:
+    paths:
+      - 'thai-tooltip/**'
+      - '.github/workflows/build-thai-tooltip.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install
+        run: python -m pip install pyinstaller pillow pystray mss rapidfuzz numpy onnxruntime rapidocr==3.10.0
+
+      - name: Version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path "thai-tooltip/OH Thai Tooltip.pyw" -Pattern "^VERSION = '([^']+)'").Matches[0].Groups[1].Value
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Build exe
+        working-directory: thai-tooltip
+        run: >
+          python -m PyInstaller --noconfirm --clean --onefile --windowed
+          --name "OH-Thai-Tooltip" --icon thai_tooltip.ico
+          --add-data "oh_thai_db.json;." --add-data "oh_web.json;." --add-data "thai_tooltip.png;."
+          --paths . --collect-all rapidocr --collect-all omegaconf --collect-all antlr4
+          --hidden-import PIL._tkinter_finder --hidden-import pystray._win32
+          --exclude-module PyQt5 --exclude-module PyQt6 --exclude-module PySide6 --exclude-module matplotlib
+          --exclude-module scipy --exclude-module pandas --exclude-module torch --exclude-module paddle
+          --exclude-module openvino --exclude-module tensorrt
+          "OH Thai Tooltip.pyw"
+
+      - name: Checksum
+        id: sum
+        shell: pwsh
+        run: |
+          $h = (Get-FileHash thai-tooltip/dist/OH-Thai-Tooltip.exe -Algorithm SHA256).Hash.ToLower()
+          $s = (Get-Item thai-tooltip/dist/OH-Thai-Tooltip.exe).Length
+          "sha=$h" >> $env:GITHUB_OUTPUT
+          "size=$s" >> $env:GITHUB_OUTPUT
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: thai-tooltip-v${{ steps.ver.outputs.version }}
+          name: OH Thai Tooltip v${{ steps.ver.outputs.version }}
+          make_latest: true
+          body: |
+            OH Thai Tooltip v${{ steps.ver.outputs.version }} — ชี้ไอเทมใน Once Human แล้วขึ้นคำแปลไทย
+            ดาวน์โหลด `OH-Thai-Tooltip.exe` แล้วเปิดได้เลย (เปิด/ปิด: Ctrl+Alt+T)
+            ขนาด ${{ steps.sum.outputs.size }} bytes · SHA-256 `${{ steps.sum.outputs.sha }}`
+          files: thai-tooltip/dist/OH-Thai-Tooltip.exe
