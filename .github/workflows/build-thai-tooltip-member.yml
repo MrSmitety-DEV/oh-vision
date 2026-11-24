@@ -1,12 +1,15 @@
 name: Build OH Thai Tooltip Member
 
-# เวอร์ชัน Member: ไม่ขึ้นหน้า Releases · เก็บเป็นไฟล์แนบของงาน build (ต้องล็อกอิน GitHub ถึงโหลดได้)
-# ตัวโปรแกรมตรวจยศ Member ฝั่งเซิร์ฟเวอร์ทุกครั้งที่เปิดอยู่แล้ว
+# เวอร์ชัน Member: ขึ้นเป็น pre-release (ไม่ใช่ latest ไม่กระทบลิงก์ดาวน์โหลดเวอร์ชันฟรี)
+# โหลดไปก็ใช้ไม่ได้ถ้าไม่มียศ Member เพราะตรวจยศฝั่งเซิร์ฟเวอร์ทุกครั้งที่เปิด
 on:
   push:
     paths:
       - '.github/workflows/build-thai-tooltip-member.yml'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -40,3 +43,20 @@ jobs:
           name: OH-Thai-Tooltip-Member
           path: thai-tooltip/dist/OH-Thai-Tooltip-Member.exe
           retention-days: 14
+
+      - name: Version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path "thai-tooltip/OH Thai Tooltip.pyw" -Pattern "^VERSION = '([^']+)'").Matches[0].Groups[1].Value
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: thai-tooltip-member-v${{ steps.ver.outputs.version }}
+          name: OH Thai Tooltip Member v${{ steps.ver.outputs.version }}
+          prerelease: true
+          make_latest: false
+          body: เวอร์ชัน Member — ต้องมียศ YouTube Member ใน Discord ของช่อง MrSmitety ถึงจะใช้งานได้
+          files: thai-tooltip/dist/OH-Thai-Tooltip-Member.exe
