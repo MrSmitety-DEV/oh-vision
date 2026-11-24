@@ -2,7 +2,7 @@
 """OH Thai Tooltip — ชี้ที่ไอเทมใน Once Human แล้วขึ้นคำแปลไทยข้างกล่องรายละเอียด
 ทำงานจากภาพหน้าจออย่างเดียว: ไม่อ่านหน่วยความจำเกม ไม่แก้ไฟล์เกม ไม่ส่งปุ่มเข้าเกม
 by MrSmitety Hub"""
-VERSION = '0.7.7'
+VERSION = '0.8.0'
 APP = 'OH Thai Tooltip'
 PORT = 47616
 GAME_EXE = 'once_human.exe'
@@ -53,6 +53,14 @@ from PIL import Image, ImageDraw, ImageFilter
 
 sys.path.insert(0, BASE)
 import engine, detect   # noqa: E402
+
+# เวอร์ชัน Member: build ที่มีไฟล์ member_edition.flag ต้องตรวจยศ Member ผ่าน Discord ก่อนถึงจะแปลได้
+MEMBER_ED = os.path.exists(os.path.join(BASE, 'member_edition.flag'))
+if MEMBER_ED:
+    APP = 'OH Thai Tooltip Member'
+GATE = threading.Event()          # เปิด = แปลได้
+if not MEMBER_ED:
+    GATE.set()
 
 # ───────────── ตั้งค่า ─────────────
 SET_PATH = os.path.join(DATA, 'settings.json')
@@ -210,6 +218,13 @@ class Reader:
         if web.get('pairs'):
             self.db.apply_pairs(web['pairs'])
         self.web, self.names = web, names
+        if getattr(self, 'member', None):
+            self.apply_member(self.member)              # คำแปลมือของ Member ทับข้อมูลเว็บเสมอ
+
+    def apply_member(self, pack):
+        self.member = pack
+        self.db.apply_pairs(pack.get('tmpl') or {})
+        self.db.set_terms(pack.get('terms') or {})
 
     # ── โหมดเร็ว: อ่านแค่แถบหัว → จำชื่อ → ดึงคำแปลจากข้อมูลเว็บ ──
     def read_header(self, crop, hb):
@@ -740,7 +755,7 @@ class Worker(threading.Thread):
         while self.running:
             time.sleep(0.12)
             try:
-                if not SET['enabled'] or not (SET['any_window'] or fg_is_game()):
+                if not GATE.is_set() or not SET['enabled'] or not (SET['any_window'] or fg_is_game()):
                     if self.cur_rect:
                         self.q.put(('hide', None)); self.cur_rect = None; self.cur_thumb = None
                     continue
@@ -956,6 +971,41 @@ def updater_thread(q, wk):
         time.sleep(3 * 3600)
 
 
+# ───────────── เวอร์ชัน Member: ตรวจยศทุกครั้งที่เปิด + ทุก 6 ชั่วโมง ─────────────
+def member_thread(q, wk, mb, want_login):
+    import member as M
+    first = True
+    while True:
+        try:
+            if want_login.is_set():
+                want_login.clear()
+                q.put(('toast', 'เปิดเบราว์เซอร์ให้ล็อกอิน Discord แล้ว\nล็อกอินเสร็จจะกลับมาทำงานเอง'))
+                if not mb.login():
+                    q.put(('toast', 'ยังไม่ได้ล็อกอิน (หมดเวลา) · คลิกขวาไอคอน → ล็อกอิน Member'))
+            st = mb.check()
+            log('member', st)
+            while wk.reader is None:
+                time.sleep(0.3)
+            if st.get('ok'):
+                if mb.pack and (st.get('changed') or first or getattr(wk.reader, 'member', None) is not mb.pack):
+                    wk.reader.apply_member(mb.pack)
+                    wk.cache.clear(); wk.thumbs.clear()
+                if not GATE.is_set():
+                    q.put(('toast', '💎 ' + M.reason_text(st) + '\nใช้คำแปลของ MrSmitety แล้ว'))
+                GATE.set()
+            else:
+                GATE.clear(); q.put(('hide', None))
+                if st.get('reason') in ('login', 'session') and first:
+                    want_login.set(); first = False
+                    continue
+                q.put(('fatal', 'OH Thai Tooltip Member ใช้งานไม่ได้\n' + M.reason_text(st) + '\nคลิกขวาไอคอนมุมขวาล่าง → ล็อกอิน Member'))
+            q.put(('menu', None))
+        except Exception:
+            log('member', traceback.format_exc())
+        first = False
+        want_login.wait(6 * 3600)
+
+
 # ───────────── ปุ่มลัด Ctrl+Alt+T ─────────────
 def hotkey_thread(q):
     if not IS_WIN:
@@ -1000,6 +1050,11 @@ def main():
     wk.start()
     threading.Thread(target=hotkey_thread, args=(q,), daemon=True).start()
     threading.Thread(target=updater_thread, args=(q, wk), daemon=True).start()
+    mb = None; want_login = threading.Event()
+    if MEMBER_ED:
+        import member as M
+        mb = M.Member(DATA, VERSION, log)
+        threading.Thread(target=member_thread, args=(q, wk, mb, want_login), daemon=True).start()
 
     toast_w = tk.Toplevel(root); toast_w.overrideredirect(True); toast_w.attributes('-topmost', True)
     toast_w.configure(bg=BG, highlightthickness=1, highlightbackground=TEAL)
@@ -1042,8 +1097,22 @@ def main():
         def quit_(icon, item):
             q.put(('quit', None))
 
+        def m_login(icon, item):
+            want_login.set()
+
+        def m_logout(icon, item):
+            mb.logout(); GATE.clear(); q.put(('hide', None)); q.put(('menu', None))
+            q.put(('toast', 'ออกจากระบบ Member แล้ว · ลบคำแปลมือออกจากเครื่องแล้ว'))
+
+        mitems = []
+        if MEMBER_ED:
+            mitems = [pystray.MenuItem(lambda item: M.reason_text(mb.status), None, enabled=False),
+                      pystray.MenuItem('ล็อกอิน Member (Discord)', m_login),
+                      pystray.MenuItem('ออกจากระบบ Member', m_logout, enabled=lambda item: mb.has_login()),
+                      pystray.Menu.SEPARATOR]
         menu = pystray.Menu(
             pystray.MenuItem(f'{APP} v{VERSION}', None, enabled=False),
+            *mitems,
             pystray.MenuItem('เปิดใช้งาน (Ctrl+Alt+T)', flip('enabled', 'เปิดแปลไทยแล้ว', 'ปิดแปลไทยแล้ว'), checked=chk('enabled'), default=True),
             pystray.MenuItem('แปลประโยคที่ไม่มีในคลังด้วย Google (ใช้เน็ต)', flip('mt', 'เปิดแปลสำรองด้วย Google', 'ปิดแปลสำรอง'), checked=chk('mt')),
             pystray.MenuItem('แสดงภาษาอังกฤษใต้คำแปล', flip('show_en', 'แสดงภาษาอังกฤษด้วย', 'ซ่อนภาษาอังกฤษ'), checked=chk('show_en')),
@@ -1084,7 +1153,10 @@ def main():
                         tray.update_menu()
                 elif k == 'toast':
                     toast(v)
-                elif k == 'ready':
+                elif k == 'menu':
+                    if tray:
+                        tray.update_menu()
+                elif k == 'ready' and GATE.is_set():
                     toast('OH Thai Tooltip พร้อมใช้งาน\nเอาเมาส์ชี้ที่ปืน เกราะ ม็อด หรืออาหารในเกม\nเปิด/ปิด: Ctrl+Alt+T', 5000)
                 elif k == 'fatal':
                     toast(v, 15000)

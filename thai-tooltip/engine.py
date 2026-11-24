@@ -35,6 +35,13 @@ class DB:
                 idx[q] = len(tm); tm.append([en, t]); keys.append(q)
         self.tm, self.keys = tm, keys                     # สลับทีเดียว (thread-safe พอสำหรับการอ่าน)
 
+    def set_terms(self, terms):
+        """คำ/หัวข้อแปลมือ (Member) ทับของเดิม"""
+        if not terms:
+            return
+        t = dict(self.terms); t.update(terms)
+        self.terms, self.tkeys = t, {squash(k): v for k, v in t.items()}
+
     def add_user(self, path):
         try:
             u = json.load(open(path, encoding='utf-8'))
