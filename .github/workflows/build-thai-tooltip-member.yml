@@ -1,0 +1,42 @@
+name: Build OH Thai Tooltip Member
+
+# เวอร์ชัน Member: ไม่ขึ้นหน้า Releases · เก็บเป็นไฟล์แนบของงาน build (ต้องล็อกอิน GitHub ถึงโหลดได้)
+# ตัวโปรแกรมตรวจยศ Member ฝั่งเซิร์ฟเวอร์ทุกครั้งที่เปิดอยู่แล้ว
+on:
+  push:
+    paths:
+      - '.github/workflows/build-thai-tooltip-member.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install
+        run: python -m pip install pyinstaller pillow pystray mss rapidfuzz numpy onnxruntime rapidocr==3.10.0
+
+      - name: Build exe
+        working-directory: thai-tooltip
+        run: >
+          python -m PyInstaller --noconfirm --clean --onefile --windowed
+          --name "OH-Thai-Tooltip-Member" --icon thai_tooltip.ico
+          --add-data "oh_thai_db.json;." --add-data "oh_web.json;." --add-data "thai_tooltip.png;."
+          --add-data "member_edition.flag;."
+          --paths . --collect-all rapidocr --collect-all omegaconf --collect-all antlr4
+          --hidden-import PIL._tkinter_finder --hidden-import pystray._win32 --hidden-import member
+          --exclude-module PyQt5 --exclude-module PyQt6 --exclude-module PySide6 --exclude-module matplotlib
+          --exclude-module scipy --exclude-module pandas --exclude-module torch --exclude-module paddle
+          --exclude-module openvino --exclude-module tensorrt
+          "OH Thai Tooltip.pyw"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OH-Thai-Tooltip-Member
+          path: thai-tooltip/dist/OH-Thai-Tooltip-Member.exe
+          retention-days: 14
