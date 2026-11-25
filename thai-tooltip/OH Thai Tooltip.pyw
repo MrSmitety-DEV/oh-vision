@@ -2,7 +2,7 @@
 """OH Thai Tooltip — ชี้ที่ไอเทมใน Once Human แล้วขึ้นคำแปลไทยข้างกล่องรายละเอียด
 ทำงานจากภาพหน้าจออย่างเดียว: ไม่อ่านหน่วยความจำเกม ไม่แก้ไฟล์เกม ไม่ส่งปุ่มเข้าเกม
 by MrSmitety Hub"""
-VERSION = '0.8.1'
+VERSION = '0.8.2'
 APP = 'OH Thai Tooltip'
 PORT = 47616
 GAME_EXE = 'once_human.exe'

@@ -170,8 +170,11 @@ def icon_img(key, size):
     """ไอคอนจากเว็บ hub (เก็บไว้ในเครื่อง) → PIL Image หรือ None"""
     if not key:
         return None
+    # key มาจากข้อมูลบิ้วบนเว็บ (ผู้ใช้คนไหนก็แก้ได้) → ยอมเฉพาะตัวอักษรปลอดภัย กันชื่อไฟล์แบบ ..\ หรือ C:\ เขียนไฟล์นอกโฟลเดอร์
+    if not re.fullmatch(r'(hide:)?[A-Za-z0-9_\-]+(/[A-Za-z0-9_\-]+)*', key) or len(key) > 120:
+        return None
     if key.startswith('hide:'):
-        p = os.path.join(BASE, 'hideic', key[5:] + '.png')
+        p = os.path.join(BASE, 'hideic', key[5:].replace('/', '') + '.png')
     else:
         p = os.path.join(ICDIR, key.replace('/', '__') + '.png')
         if not os.path.exists(p):

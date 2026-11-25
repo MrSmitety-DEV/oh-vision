@@ -37,7 +37,7 @@ def crash(exc_type, exc, tb):
     os._exit(1)
 sys.excepthook = crash
 
-VERSION = '1.2.1'   # เปลี่ยนเลขนี้ทุกครั้งที่แก้โปรแกรมแล้วจะแจกใหม่
+VERSION = '1.2.2'   # เปลี่ยนเลขนี้ทุกครั้งที่แก้โปรแกรมแล้วจะแจกใหม่
 APP = 'MrSmitetyVision'
 PORT = 47615
 SB_URL = 'https://ejletwoddaqdnjjqjwun.supabase.co'

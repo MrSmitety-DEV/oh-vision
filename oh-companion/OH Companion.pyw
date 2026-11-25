@@ -5,12 +5,13 @@
   • Build Overlay  เช็คของที่ใส่ในหน้า Gear เทียบกับบิ้วจากเว็บ (ทำงานเฉพาะตอนเกมอยู่หน้าจอ)
 ทุกโมดูลอ่านจากภาพหน้าจออย่างเดียว: ไม่อ่านหน่วยความจำเกม ไม่แก้ไฟล์เกม ไม่ส่งปุ่มเข้าเกม
 สร้างโดย MrSmitety · hub.mrsmitety.com"""
-VERSION = '1.0.5'
+VERSION = '1.0.6'
 APP = 'OH Companion'
 PORT = 47618
 HUB = 'https://hub.mrsmitety.com'
 SB_URL = 'https://ejletwoddaqdnjjqjwun.supabase.co'
 SB_KEY = 'sb_publishable_uLX_CLa1meE1FxNGOaYm7g_RnvZ83u6'      # คีย์สาธารณะ (anon) ของเว็บ hub
+DL_PREFIX = 'https://github.com/MrSmitety-DEV/oh-vision/releases/download/'   # อัปเดตโหลดได้จากที่นี่เท่านั้น
 
 import os, sys, json, time, threading, queue, socket, traceback, urllib.request, webbrowser, hashlib, subprocess, shutil
 
@@ -809,7 +810,9 @@ class UpdateDialog:
         if self.busy:
             return
         url = self.j.get('url') or ''
-        if not (FROZEN and IS_WIN and url.startswith('https://')):
+        # โหลดได้เฉพาะไฟล์จาก GitHub Releases ของ repo นี้ และต้องมี SHA-256 กำกับ (กันกรณีไฟล์ JSON บนเว็บถูกแก้ให้ชี้ไปไฟล์อื่น)
+        if not (FROZEN and IS_WIN and url.startswith(DL_PREFIX) and '..' not in url
+                and len(self.j.get('sha256') or '') == 64):
             webbrowser.open(HUB + '/#oh-addons'); self.close(); return
         self.busy = True
         for b in (self.b_up, self.b_later, self.b_skip):
@@ -837,7 +840,7 @@ class UpdateDialog:
                         fr = got / total if total else 0
                         self.host.call(lambda fr=fr, got=got: self.set_prog(fr, f'กำลังดาวน์โหลด… {got / 1048576:.0f} / {total / 1048576:.0f} MB'))
             want = (self.j.get('sha256') or '').lower()
-            if want and h.hexdigest() != want:
+            if h.hexdigest() != want:
                 os.remove(new)
                 raise ValueError('ไฟล์ที่โหลดมาไม่ตรงกับต้นฉบับ (SHA-256) ลองใหม่อีกครั้ง')
             log('update downloaded', self.j.get('ver'))
@@ -931,6 +934,7 @@ def main():
         while True:
             try:
                 c, _ = lock.accept()
+                c.settimeout(2)
                 if c.recv(16) == b'show':
                     host.show_home()
                 c.close()

@@ -8,6 +8,7 @@
 import os, sys, json, time, threading, hashlib, subprocess, urllib.request, webbrowser, io
 
 HUB = 'https://hub.mrsmitety.com'
+DL_PREFIX = 'https://github.com/MrSmitety-DEV/oh-vision/releases/download/'   # โหลดได้จากที่นี่เท่านั้น
 BG = '#0d1318'; CARD = '#151d25'; LINE = '#2a3644'; FG = '#e9eef2'; DIM = '#8a96a3'; TEAL = '#00dcd2'; BAD = '#ff7a45'
 FONT = 'Leelawadee UI' if sys.platform == 'win32' else 'DejaVu Sans'
 FROZEN = getattr(sys, 'frozen', False)
@@ -117,7 +118,8 @@ class _Dialog:
         if self.busy:
             return
         url = self.j.get('url', '')
-        if not (FROZEN and sys.platform == 'win32' and url.startswith('https://')):
+        if not (FROZEN and sys.platform == 'win32' and url.startswith(DL_PREFIX) and '..' not in url
+                and len(self.j.get('sha256') or '') == 64):
             webbrowser.open(HUB + '/#oh-addons'); self.later(); return
         self.busy = True
         for b in (self.b_go, self.b_later, self.b_never):
@@ -143,7 +145,7 @@ class _Dialog:
                         last = time.time(); fr = got / total if total else 0
                         self.root.after(0, lambda fr=fr, got=got: self.prog(fr, f'กำลังดาวน์โหลด… {got / 1048576:.0f} / {total / 1048576:.0f} MB'))
             want = (self.j.get('sha256') or '').lower()
-            if want and h.hexdigest() != want:
+            if h.hexdigest() != want:
                 os.remove(tmp); raise ValueError('ไฟล์ที่โหลดมาไม่ตรงกับต้นฉบับ ลองใหม่อีกครั้ง')
             os.replace(tmp, out)
             self.log('companion downloaded', out)

@@ -2,7 +2,7 @@
 """OH Build Overlay — เลือกบิ้วจาก MrSmitety Hub แล้วโชว์เป็นแถบโปร่งในหน้าใส่ของของ Once Human
 ชิ้นไหนใส่ตรงบิ้วแล้วจะสว่างขึ้น · ทำงานจากภาพหน้าจออย่างเดียว: ไม่อ่านหน่วยความจำเกม ไม่แก้ไฟล์เกม ไม่ส่งปุ่มเข้าเกม
 by MrSmitety Hub"""
-VERSION = '0.2.3'
+VERSION = '0.2.4'
 APP = 'OH Build Overlay'
 PORT = 47617
 GAME_EXE = 'once_human.exe'
@@ -170,8 +170,11 @@ def icon_img(key, size):
     """ไอคอนจากเว็บ hub (เก็บไว้ในเครื่อง) → PIL Image หรือ None"""
     if not key:
         return None
+    # key มาจากข้อมูลบิ้วบนเว็บ (ผู้ใช้คนไหนก็แก้ได้) → ยอมเฉพาะตัวอักษรปลอดภัย กันชื่อไฟล์แบบ ..\ หรือ C:\ เขียนไฟล์นอกโฟลเดอร์
+    if not re.fullmatch(r'(hide:)?[A-Za-z0-9_\-]+(/[A-Za-z0-9_\-]+)*', key) or len(key) > 120:
+        return None
     if key.startswith('hide:'):
-        p = os.path.join(BASE, 'hideic', key[5:] + '.png')
+        p = os.path.join(BASE, 'hideic', key[5:].replace('/', '') + '.png')
     else:
         p = os.path.join(ICDIR, key.replace('/', '__') + '.png')
         if not os.path.exists(p):
