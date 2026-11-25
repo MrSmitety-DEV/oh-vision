@@ -5,14 +5,14 @@
   • Build Overlay  เช็คของที่ใส่ในหน้า Gear เทียบกับบิ้วจากเว็บ (ทำงานเฉพาะตอนเกมอยู่หน้าจอ)
 ทุกโมดูลอ่านจากภาพหน้าจออย่างเดียว: ไม่อ่านหน่วยความจำเกม ไม่แก้ไฟล์เกม ไม่ส่งปุ่มเข้าเกม
 สร้างโดย MrSmitety · hub.mrsmitety.com"""
-VERSION = '1.0.1'
+VERSION = '1.0.2'
 APP = 'OH Companion'
 PORT = 47618
 HUB = 'https://hub.mrsmitety.com'
 SB_URL = 'https://ejletwoddaqdnjjqjwun.supabase.co'
 SB_KEY = 'sb_publishable_uLX_CLa1meE1FxNGOaYm7g_RnvZ83u6'      # คีย์สาธารณะ (anon) ของเว็บ hub
 
-import os, sys, json, time, threading, queue, socket, traceback, urllib.request, webbrowser
+import os, sys, json, time, threading, queue, socket, traceback, urllib.request, webbrowser, hashlib, subprocess, shutil
 
 IS_WIN = sys.platform == 'win32'
 FROZEN = getattr(sys, 'frozen', False)
@@ -388,8 +388,11 @@ class Host:
                     HUB + '/addons/oh-companion.json?t=%d' % time.time(), headers={'User-Agent': f'OHCompanion/{VERSION}'}), timeout=10)
                 j = json.loads(r.read().decode('utf-8'))
                 if vtuple(j.get('ver')) > vtuple(VERSION):
+                    first = self.update is None
                     self.update = j
-                    self.call(lambda: (self.toast(f'OH Companion มีเวอร์ชันใหม่ {j["ver"]}\nเปิดหน้าหลักเพื่อดาวน์โหลด', 8000), self._refresh()))
+                    self.call(self._refresh)
+                    if first and SET.get('skip_ver') != j.get('ver'):
+                        self.call(lambda: UpdateDialog(self, j))
             except Exception as e:
                 log('update check', e)
             try:
@@ -466,7 +469,7 @@ class Home:
         self.upd = tk.Frame(w, bg='#2a2410', highlightthickness=1, highlightbackground=WARN)
         self.upd_l = tk.Label(self.upd, bg='#2a2410', fg=WARN, font=(FONT, -14), anchor='w')
         self.upd_l.pack(side='left', padx=10, pady=6)
-        tk.Button(self.upd, text='ดาวน์โหลด', command=lambda: webbrowser.open(HUB + '/#oh-addons'), bg=WARN, fg='#1a1400',
+        tk.Button(self.upd, text='ดูรายละเอียด / อัปเดต', command=lambda: self.host.update and UpdateDialog(self.host, self.host.update), bg=WARN, fg='#1a1400',
                   relief='flat', font=(FONT, -13, 'bold'), padx=10, cursor='hand2').pack(side='right', padx=8, pady=6)
 
         self.box = tk.Frame(w, bg=BG); self.box.pack(fill='x', **pad)
@@ -593,7 +596,7 @@ class Home:
             else:
                 c['badge'].pack_forget()
         if h.update:
-            self.upd_l.config(text=f'มีเวอร์ชันใหม่ {h.update.get("ver")} · ดาวน์โหลดได้ที่หน้า Add-on')
+            self.upd_l.config(text=f'มีเวอร์ชันใหม่ {h.update.get("ver")} (ตอนนี้ใช้ {VERSION})')
             if not self.upd.winfo_manager():
                 self.upd.pack(fill='x', padx=18, pady=(0, 6), before=self.box)
 
@@ -668,8 +671,215 @@ class Home:
                       cursor='hand2', activebackground=LINE).pack(side='left', padx=4)
 
 
+# ───────────── อัปเดต ─────────────
+def changes_since(j):
+    """รายการเปลี่ยนแปลงทุกเวอร์ชันที่ใหม่กว่าตัวที่ใช้อยู่ (จาก oh-companion.json ช่อง changes)"""
+    out = []
+    for c in j.get('changes') or []:
+        if vtuple(c.get('ver')) > vtuple(VERSION):
+            out.append(c)
+    out.sort(key=lambda c: vtuple(c.get('ver')), reverse=True)
+    return out
+
+
+class UpdateDialog:
+    OPEN = None
+
+    def __init__(self, host, j):
+        if UpdateDialog.OPEN:
+            try:
+                UpdateDialog.OPEN.d.lift(); return
+            except Exception:
+                pass
+        UpdateDialog.OPEN = self
+        self.host = host; self.j = j; self.busy = False
+        d = self.d = tk.Toplevel(host.root); d.title('อัปเดต ' + APP); d.configure(bg=BG); d.resizable(False, False)
+        d.attributes('-topmost', True)
+        try:
+            d.iconbitmap(os.path.join(BASE, 'oh_companion.ico'))
+        except Exception:
+            pass
+        d.protocol('WM_DELETE_WINDOW', self.later)
+        self.img = None
+        try:
+            self.img = ImageTk.PhotoImage(Image.open(os.path.join(BASE, 'oh_companion.png')).convert('RGBA').resize((48, 48), Image.LANCZOS))
+        except Exception:
+            pass
+        top = tk.Frame(d, bg=BG); top.pack(fill='x', padx=20, pady=(18, 8))
+        if self.img:
+            tk.Label(top, image=self.img, bg=BG).pack(side='left')
+        tt = tk.Frame(top, bg=BG); tt.pack(side='left', padx=12)
+        tk.Label(tt, text=f'มีเวอร์ชันใหม่ {j.get("ver")}', bg=BG, fg=FG, font=(FONT, -20, 'bold')).pack(anchor='w')
+        mb = (j.get('size') or 0) / 1048576
+        tk.Label(tt, text=f'ตอนนี้ใช้ {VERSION}' + (f' · ขนาดไฟล์ {mb:.0f} MB' if mb else ''), bg=BG, fg=DIM, font=(FONT, -13)).pack(anchor='w')
+
+        box = tk.Frame(d, bg=CARD, highlightthickness=1, highlightbackground=LINE); box.pack(fill='both', padx=20, pady=4)
+        t = tk.Text(box, bg=CARD, fg=FG, font=(FONT, -14), wrap='word', width=58, height=13, relief='flat', bd=0,
+                    padx=12, pady=10, cursor='arrow')
+        t.tag_config('h', font=(FONT, -15, 'bold'), foreground=TEAL, spacing1=6, spacing3=4)
+        t.tag_config('i', lmargin1=8, lmargin2=26, spacing3=3)
+        tag = {'new': ('ใหม่', OKC), 'fix': ('แก้', WARN), 'change': ('ปรับ', '#8fb4ff')}
+        for k, (lab, col) in tag.items():
+            t.tag_config(k, foreground=col, font=(FONT, -13, 'bold'))
+        ch = changes_since(j)
+        if not ch:
+            t.insert('end', 'ปรับปรุงและแก้ไขข้อผิดพลาดเล็กน้อย', 'i')
+        for c in ch:
+            t.insert('end', f'เวอร์ชัน {c.get("ver")}' + (f'  ·  {c["date"]}' if c.get('date') else '') + '\n', 'h')
+            for it in c.get('items') or []:
+                if isinstance(it, str):
+                    kind, txt = 'change', it
+                else:
+                    kind, txt = it.get('type', 'change'), it.get('text', '')
+                lab = tag.get(kind, tag['change'])[0]
+                t.insert('end', '• ', 'i'); t.insert('end', f'[{lab}] ', kind); t.insert('end', txt + '\n', 'i')
+        t.config(state='disabled')
+        sb = tk.Scrollbar(box, command=t.yview); t.config(yscrollcommand=sb.set)
+        t.pack(side='left', fill='both', expand=True)
+        if len(ch) > 1 or sum(len(c.get('items') or []) for c in ch) > 9:
+            sb.pack(side='right', fill='y')
+
+        self.msg = tk.Label(d, text='', bg=BG, fg=DIM, font=(FONT, -13)); self.msg.pack(anchor='w', padx=20, pady=(8, 0))
+        self.bar = tk.Canvas(d, width=500, height=8, bg=CARD, highlightthickness=0)
+        bf = tk.Frame(d, bg=BG); bf.pack(fill='x', padx=20, pady=(8, 18))
+        self.b_up = tk.Button(bf, text='อัปเดตเลย', command=self.go, bg=TEAL, fg='#052322', relief='flat',
+                              font=(FONT, -14, 'bold'), padx=16, pady=4, cursor='hand2', activebackground='#33e6de')
+        self.b_up.pack(side='right')
+        self.b_later = tk.Button(bf, text='ไว้ทีหลัง', command=self.later, bg=CARD, fg=FG, relief='flat', font=(FONT, -13),
+                                 padx=12, pady=4, cursor='hand2', activebackground=LINE)
+        self.b_later.pack(side='right', padx=6)
+        self.b_skip = tk.Button(bf, text='ข้ามเวอร์ชันนี้', command=self.skip, bg=BG, fg=DIM, relief='flat', font=(FONT, -12),
+                                cursor='hand2', activebackground=BG, activeforeground=FG)
+        self.b_skip.pack(side='left')
+        d.update_idletasks()
+        sw, sh = d.winfo_screenwidth(), d.winfo_screenheight()
+        d.geometry('+%d+%d' % ((sw - d.winfo_reqwidth()) // 2, (sh - d.winfo_reqheight()) // 3))
+        d.lift(); d.focus_force()
+
+    def close(self):
+        UpdateDialog.OPEN = None
+        self.d.destroy()
+
+    def later(self):
+        if not self.busy:
+            self.close()
+
+    def skip(self):
+        SET['skip_ver'] = self.j.get('ver'); save_set()
+        self.host.toast(f'ข้ามเวอร์ชัน {self.j.get("ver")} แล้ว · อัปเดตได้ทุกเมื่อจากแถบในหน้าหลัก', 5000)
+        self.close()
+
+    def set_prog(self, f, text):
+        self.msg.config(text=text)
+        self.bar.delete('all')
+        self.bar.create_rectangle(0, 0, int(500 * max(0, min(1, f))), 8, fill=TEAL, outline='')
+
+    def go(self):
+        if self.busy:
+            return
+        url = self.j.get('url') or ''
+        if not (FROZEN and IS_WIN and url.startswith('https://')):
+            webbrowser.open(HUB + '/#oh-addons'); self.close(); return
+        self.busy = True
+        for b in (self.b_up, self.b_later, self.b_skip):
+            b.config(state='disabled')
+        self.bar.pack(padx=20, pady=(4, 0), before=self.b_up.master)
+        self.set_prog(0, 'กำลังดาวน์โหลด…')
+        threading.Thread(target=self.download, args=(url,), daemon=True).start()
+
+    def download(self, url):
+        exe = sys.executable
+        new = os.path.join(os.path.dirname(exe), 'OH-Companion.update.exe')
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': f'OHCompanion/{VERSION}'})
+            r = urllib.request.urlopen(req, timeout=30)
+            total = int(r.headers.get('Content-Length') or self.j.get('size') or 0)
+            h = hashlib.sha256(); got = 0; last = 0
+            with open(new, 'wb') as f:
+                while True:
+                    b = r.read(1 << 18)
+                    if not b:
+                        break
+                    f.write(b); h.update(b); got += len(b)
+                    if time.time() - last > 0.15:
+                        last = time.time()
+                        fr = got / total if total else 0
+                        self.host.call(lambda fr=fr, got=got: self.set_prog(fr, f'กำลังดาวน์โหลด… {got / 1048576:.0f} / {total / 1048576:.0f} MB'))
+            want = (self.j.get('sha256') or '').lower()
+            if want and h.hexdigest() != want:
+                os.remove(new)
+                raise ValueError('ไฟล์ที่โหลดมาไม่ตรงกับต้นฉบับ (SHA-256) ลองใหม่อีกครั้ง')
+            log('update downloaded', self.j.get('ver'))
+            self.host.call(lambda: self.set_prog(1, 'โหลดเสร็จ กำลังเปิดเวอร์ชันใหม่…'))
+            self.host.call(lambda: self.host.root.after(600, lambda: self.swap(new, exe)))
+        except PermissionError:
+            log('update perm', traceback.format_exc())
+            self.host.call(lambda: self.fail('โฟลเดอร์ที่วางโปรแกรมไม่ให้เขียนไฟล์ · โหลดเวอร์ชันใหม่จากหน้าเว็บแทน', True))
+        except Exception as e:
+            log('update', traceback.format_exc())
+            self.host.call(lambda e=e: self.fail(f'อัปเดตไม่สำเร็จ: {e}', False))
+
+    def fail(self, text, web):
+        self.busy = False
+        self.msg.config(text=text, fg=BAD)
+        for b in (self.b_up, self.b_later, self.b_skip):
+            b.config(state='normal')
+        if web:
+            self.b_up.config(text='เปิดหน้าดาวน์โหลด', command=lambda: (webbrowser.open(HUB + '/#oh-addons'), self.close()))
+
+    def swap(self, new, exe):
+        """เปิดไฟล์ใหม่ในโหมด --finish-update: รอตัวนี้ปิด แล้วก๊อปตัวเองทับไฟล์เดิม เปิดไฟล์เดิมขึ้นมาใหม่"""
+        try:
+            subprocess.Popen([new, '--finish-update', exe, str(os.getpid())], close_fds=True,
+                             creationflags=0x00000008 | 0x00000200)   # DETACHED_PROCESS | NEW_PROCESS_GROUP
+        except Exception as e:
+            log('swap', traceback.format_exc()); self.fail(f'เปิดเวอร์ชันใหม่ไม่ได้: {e}', True); return
+        self.host._quit()
+
+
+def finish_update(target, pid):
+    """รันจากไฟล์ OH-Companion.update.exe: รอเวอร์ชันเก่าปิด → ก๊อปทับ → เปิดใหม่ → ไฟล์ใหม่จะลบตัว .update.exe ทิ้งเอง"""
+    me = sys.executable
+    log('finish update', me, '->', target)
+    for _ in range(90):                      # ไฟล์เดิมยังถูกล็อกจนกว่าโปรแกรมเก่าปิดสนิท
+        try:
+            shutil.copyfile(me, target)
+            break
+        except Exception:
+            time.sleep(0.5)
+    else:
+        log('finish update: copy failed, run from update file')
+        subprocess.Popen([me], close_fds=True, creationflags=0x00000008); return
+    subprocess.Popen([target, '--updated', me], close_fds=True, creationflags=0x00000008)
+
+
+def cleanup_update(path):
+    def job():
+        for _ in range(40):
+            try:
+                if os.path.basename(path).lower() == 'oh-companion.update.exe' and os.path.exists(path):
+                    os.remove(path)
+                return
+            except Exception:
+                time.sleep(0.5)
+    threading.Thread(target=job, daemon=True).start()
+
+
 # ───────────── main ─────────────
 def main():
+    if '--finish-update' in sys.argv:
+        i = sys.argv.index('--finish-update')
+        finish_update(sys.argv[i + 1], sys.argv[i + 2] if len(sys.argv) > i + 2 else '')
+        return
+    if '--updated' in sys.argv:
+        i = sys.argv.index('--updated')
+        if len(sys.argv) > i + 1:
+            cleanup_update(sys.argv[i + 1])
+        for _ in range(20):                  # เวอร์ชันเก่าอาจยังปล่อยพอร์ตไม่ทัน
+            try:
+                t = socket.socket(); t.bind(('127.0.0.1', PORT)); t.close(); break
+            except OSError:
+                time.sleep(0.3)
     try:
         lock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         lock.bind(('127.0.0.1', PORT)); lock.listen(2)
@@ -699,7 +909,9 @@ def main():
 
     root.after(40, host.pump)
     host.start_tray()
-    tray_only = '--tray' in sys.argv
+    tray_only = '--tray' in sys.argv or '--updated' in sys.argv
+    if '--updated' in sys.argv:
+        root.after(1500, lambda: host.toast(f'อัปเดต OH Companion เป็นเวอร์ชัน {VERSION} แล้ว', 6000))
     if SET.get('first') or (SET.get('home_on_start') and not tray_only):
         host._show_home()
         SET['first'] = False; save_set()
