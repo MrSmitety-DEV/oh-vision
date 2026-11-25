@@ -1,0 +1,65 @@
+name: Build OH Build Overlay
+
+# ออก Release แยกของ Build Overlay (tag build-overlay-vX.Y.Z) และไม่ตั้งเป็น latest
+# เพราะลิงก์ releases/latest ของ repo นี้ใช้กับ OH Thai Tooltip
+on:
+  push:
+    paths:
+      - 'build-overlay/**'
+      - '.github/workflows/build-build-overlay.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install
+        run: python -m pip install pyinstaller pillow pystray mss rapidfuzz numpy onnxruntime rapidocr==3.10.0
+
+      - name: Version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path "build-overlay/OH Build Overlay.pyw" -Pattern "^VERSION = '([^']+)'").Matches[0].Groups[1].Value
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Build exe
+        working-directory: build-overlay
+        run: >
+          python -m PyInstaller --noconfirm --clean --onefile --windowed
+          --name "OH-Build-Overlay" --icon build_overlay.ico
+          --add-data "bo_data.json;." --add-data "build_overlay.png;." --add-data "build_overlay.ico;."
+          --add-data "hideic;hideic"
+          --paths . --collect-all rapidocr --collect-all omegaconf --collect-all antlr4
+          --hidden-import PIL._tkinter_finder --hidden-import pystray._win32
+          --hidden-import bo_read --hidden-import bo_match --hidden-import detect
+          --exclude-module PyQt5 --exclude-module PyQt6 --exclude-module PySide6 --exclude-module matplotlib
+          --exclude-module scipy --exclude-module pandas --exclude-module torch --exclude-module paddle
+          --exclude-module openvino --exclude-module tensorrt
+          "OH Build Overlay.pyw"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OH-Build-Overlay
+          path: build-overlay/dist/OH-Build-Overlay.exe
+          retention-days: 14
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-overlay-v${{ steps.ver.outputs.version }}
+          name: OH Build Overlay v${{ steps.ver.outputs.version }}
+          make_latest: false
+          body: |
+            เลือกบิ้วจาก hub.mrsmitety.com แล้วโชว์เป็นแถบโปร่งในหน้า Gear ของ Once Human · ชิ้นไหนใส่ตรงบิ้วแล้วขึ้น ✓
+            อ่านจากภาพหน้าจออย่างเดียว ไม่แตะไฟล์หรือหน่วยความจำเกม · เกมต้องเป็นโหมด Borderless/Windowed
+          files: build-overlay/dist/OH-Build-Overlay.exe

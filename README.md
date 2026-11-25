@@ -27,3 +27,15 @@ SHA-256: `3d2cf1db28d5f5b6ede23ac7340539b1b774cac7dc018ea00a569dd2bcfabbc0`
 - ข้อมูลแปลอัปเดตอัตโนมัติจาก hub.mrsmitety.com
 
 ซอร์สโค้ดอยู่ในโฟลเดอร์ `thai-tooltip/` ทุกครั้งที่อัปเดตโค้ด GitHub จะ build `.exe` ใหม่และออก Release ให้อัตโนมัติ
+
+---
+
+## OH Build Overlay
+เลือกบิ้วจาก [hub.mrsmitety.com](https://hub.mrsmitety.com/#oh-builds) แล้วโชว์เป็นแถบโปร่งบนหน้า Gear ของ Once Human ชิ้นไหนใส่ตรงบิ้วแล้วขึ้น ✓ ชิ้นที่ยังขาดบอกว่าต้องใส่อะไร (ปืน · Calibration · เกราะ · หนัง · MOD + Suffix) อ่านจากภาพหน้าจอเท่านั้น
+
+**ดาวน์โหลด:** ดูลิงก์ล่าสุดที่หน้า [Add-on](https://hub.mrsmitety.com/#oh-addons) หรือ [Releases](https://github.com/MrSmitety-DEV/oh-vision/releases) (tag `build-overlay-v…`)
+
+- ซ่อน/แสดง: `Ctrl+Alt+B` · คลิกชื่อ MOD บนแถบ = คัดลอกไปค้นหาในเกม · คลิกขวา = ติ๊กเอง
+- เกมต้องเป็นโหมด Borderless/Windowed · รองรับจอ 16:9
+
+ซอร์สโค้ดอยู่ในโฟลเดอร์ `build-overlay/`
