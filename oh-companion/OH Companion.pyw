@@ -5,7 +5,7 @@
   • Build Overlay  เช็คของที่ใส่ในหน้า Gear เทียบกับบิ้วจากเว็บ (ทำงานเฉพาะตอนเกมอยู่หน้าจอ)
 ทุกโมดูลอ่านจากภาพหน้าจออย่างเดียว: ไม่อ่านหน่วยความจำเกม ไม่แก้ไฟล์เกม ไม่ส่งปุ่มเข้าเกม
 สร้างโดย MrSmitety · hub.mrsmitety.com"""
-VERSION = '1.0.2'
+VERSION = '1.0.3'
 APP = 'OH Companion'
 PORT = 47618
 HUB = 'https://hub.mrsmitety.com'
@@ -714,7 +714,7 @@ class UpdateDialog:
         tk.Label(tt, text=f'ตอนนี้ใช้ {VERSION}' + (f' · ขนาดไฟล์ {mb:.0f} MB' if mb else ''), bg=BG, fg=DIM, font=(FONT, -13)).pack(anchor='w')
 
         box = tk.Frame(d, bg=CARD, highlightthickness=1, highlightbackground=LINE); box.pack(fill='both', padx=20, pady=4)
-        t = tk.Text(box, bg=CARD, fg=FG, font=(FONT, -14), wrap='word', width=58, height=13, relief='flat', bd=0,
+        t = tk.Text(box, bg=CARD, fg=FG, font=(FONT, -14), wrap='word', width=58, height=min(14, max(5, 2 + sum(1 + len(c.get('items') or []) for c in changes_since(j)))), relief='flat', bd=0,
                     padx=12, pady=10, cursor='arrow')
         t.tag_config('h', font=(FONT, -15, 'bold'), foreground=TEAL, spacing1=6, spacing3=4)
         t.tag_config('i', lmargin1=8, lmargin2=26, spacing3=3)
