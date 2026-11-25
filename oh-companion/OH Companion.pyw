@@ -5,7 +5,7 @@
   • Build Overlay  เช็คของที่ใส่ในหน้า Gear เทียบกับบิ้วจากเว็บ (ทำงานเฉพาะตอนเกมอยู่หน้าจอ)
 ทุกโมดูลอ่านจากภาพหน้าจออย่างเดียว: ไม่อ่านหน่วยความจำเกม ไม่แก้ไฟล์เกม ไม่ส่งปุ่มเข้าเกม
 สร้างโดย MrSmitety · hub.mrsmitety.com"""
-VERSION = '1.0.3'
+VERSION = '1.0.4'
 APP = 'OH Companion'
 PORT = 47618
 HUB = 'https://hub.mrsmitety.com'
@@ -134,6 +134,25 @@ def set_autostart(on):
         return True
     except Exception as e:
         log('autostart', e)
+        return False
+
+
+def make_shortcut():
+    """สร้างทางลัด "OH Companion" บนเดสก์ท็อป (ชื่อมีช่องว่าง Windows จึงแสดงชื่อเต็มสองบรรทัด)"""
+    if not (IS_WIN and FROZEN):
+        return False
+    ps = ("$d=[Environment]::GetFolderPath('Desktop');"
+          "$s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $d 'OH Companion.lnk'));"
+          "$s.TargetPath=$env:OC_EXE;$s.WorkingDirectory=$env:OC_DIR;$s.IconLocation=$env:OC_EXE+',0';"
+          "$s.Description='OH Companion by MrSmitety';$s.Save()")
+    env = dict(os.environ, OC_EXE=sys.executable, OC_DIR=os.path.dirname(sys.executable))
+    try:
+        r = subprocess.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps], env=env,
+                           creationflags=0x08000000, timeout=20, capture_output=True)
+        log('shortcut', r.returncode, r.stderr[-300:])
+        return r.returncode == 0
+    except Exception as e:
+        log('shortcut', e)
         return False
 
 
@@ -482,6 +501,8 @@ class Home:
         cb = tk.Checkbutton(bot, text='เปิด OH Companion พร้อม Windows', variable=self.auto, command=self.toggle_auto,
                             bg=BG, fg=FG, selectcolor=CARD, activebackground=BG, activeforeground=FG, font=(FONT, -13))
         cb.pack(side='left')
+        tk.Button(bot, text='สร้างทางลัดบนเดสก์ท็อป', command=self.shortcut, bg=CARD, fg=FG, relief='flat', font=(FONT, -12),
+                  padx=10, cursor='hand2', activebackground=LINE).pack(side='right')
         if not FROZEN:
             cb.config(state='disabled')
         self.hos = tk.BooleanVar(value=bool(SET.get('home_on_start')))
@@ -628,6 +649,16 @@ class Home:
         if not SET.get('tray_tip_shown'):
             SET['tray_tip_shown'] = True; SET['first'] = False; save_set()
             self.host.toast('OH Companion ซ่อนไปที่ถาดแล้ว (มุมขวาล่าง ถ้าไม่เห็นดูในลูกศร ^)\nคลิกไอคอน OH เพื่อเปิดหน้านี้อีกครั้ง', 6000)
+
+    def shortcut(self):
+        if not FROZEN:
+            self.host.toast('ใช้ได้เฉพาะตอนเปิดจากไฟล์ .exe'); return
+
+        def job():
+            ok = make_shortcut()
+            self.host.toast('สร้างทางลัด "OH Companion" บนเดสก์ท็อปแล้ว\nไฟล์ .exe ตัวจริงย้ายไปเก็บที่อื่นได้ แต่ต้องสร้างทางลัดใหม่' if ok
+                            else 'สร้างทางลัดไม่สำเร็จ · ลองคลิกขวาไฟล์ .exe → Show more options → Send to → Desktop', 7000)
+        threading.Thread(target=job, daemon=True).start()
 
     def on_unmap(self, e):
         if e.widget is not self.w:
