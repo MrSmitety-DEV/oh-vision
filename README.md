@@ -39,3 +39,12 @@ SHA-256: `3d2cf1db28d5f5b6ede23ac7340539b1b774cac7dc018ea00a569dd2bcfabbc0`
 - เกมต้องเป็นโหมด Borderless/Windowed · รองรับจอ 16:9
 
 ซอร์สโค้ดอยู่ในโฟลเดอร์ `build-overlay/`
+
+---
+
+## OH Companion
+รวม **Vision Timer · Thai Tooltip · Build Overlay** ไว้ในโปรแกรมเดียว ไอคอนในถาดอันเดียว เปิด/ปิดแต่ละส่วนได้จากหน้าหลัก ใช้การตั้งค่าเดิมของแต่ละโปรแกรมต่อได้เลย
+
+**ดาวน์โหลด:** หน้า [Add-on](https://hub.mrsmitety.com/#oh-addons) หรือ [Releases](https://github.com/MrSmitety-DEV/oh-vision/releases) (tag `oh-companion-v…`)
+
+ซอร์สโค้ดอยู่ในโฟลเดอร์ `oh-companion/` · สร้างโดย MrSmitety

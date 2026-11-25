@@ -1,0 +1,708 @@
+# -*- coding: utf-8 -*-
+"""OH Companion — เครื่องมือเสริม Once Human จากช่อง MrSmitety รวมไว้ในโปรแกรมเดียว
+  • Vision Timer   นับถอยหลังช่วง Vision ⇄ ช่วงพัก (แสดงตลอด แม้ไม่ได้เปิดเกม)
+  • Thai Tooltip   ชี้ไอเทมในเกมแล้วขึ้นคำแปลไทย (ทำงานเฉพาะตอนเกมอยู่หน้าจอ)
+  • Build Overlay  เช็คของที่ใส่ในหน้า Gear เทียบกับบิ้วจากเว็บ (ทำงานเฉพาะตอนเกมอยู่หน้าจอ)
+ทุกโมดูลอ่านจากภาพหน้าจออย่างเดียว: ไม่อ่านหน่วยความจำเกม ไม่แก้ไฟล์เกม ไม่ส่งปุ่มเข้าเกม
+สร้างโดย MrSmitety · hub.mrsmitety.com"""
+VERSION = '1.0.0'
+APP = 'OH Companion'
+PORT = 47618
+HUB = 'https://hub.mrsmitety.com'
+SB_URL = 'https://ejletwoddaqdnjjqjwun.supabase.co'
+SB_KEY = 'sb_publishable_uLX_CLa1meE1FxNGOaYm7g_RnvZ83u6'      # คีย์สาธารณะ (anon) ของเว็บ hub
+
+import os, sys, json, time, threading, queue, socket, traceback, urllib.request, webbrowser
+
+IS_WIN = sys.platform == 'win32'
+FROZEN = getattr(sys, 'frozen', False)
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, 'w')
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, 'w')
+BASE = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, BASE)
+DATA = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'OHCompanion')
+os.makedirs(DATA, exist_ok=True)
+LOG = os.path.join(DATA, 'OH Companion.log')
+
+
+def log(*a):
+    try:
+        with open(LOG, 'a', encoding='utf-8') as f:
+            f.write(time.strftime('%Y-%m-%d %H:%M:%S ') + ' '.join(str(x) for x in a) + '\n')
+    except Exception:
+        pass
+
+
+try:
+    if os.path.getsize(LOG) > 2_000_000:
+        os.remove(LOG)
+except Exception:
+    pass
+
+if IS_WIN:
+    import ctypes
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
+import tkinter as tk
+from PIL import Image, ImageTk
+import oc_ctx
+
+# ───────────── ตั้งค่า ─────────────
+SET_PATH = os.path.join(DATA, 'settings.json')
+DEFAULT = {'mods': {'vision': True, 'thai': True, 'build': True}, 'first': True, 'new_seen': False,
+           'autostart': False, 'flags': {}, 'home_xy': None}
+
+
+def load_set():
+    s = json.loads(json.dumps(DEFAULT))
+    try:
+        d = json.load(open(SET_PATH, encoding='utf-8'))
+        s.update({k: v for k, v in d.items() if k != 'mods'})
+        s['mods'].update(d.get('mods', {}))
+    except Exception:
+        pass
+    return s
+
+
+SET = load_set()
+
+
+def save_set():
+    try:
+        json.dump(SET, open(SET_PATH, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+    except Exception:
+        pass
+
+
+# ───────────── โมดูล ─────────────
+MODS = [
+    {'key': 'vision', 'mod': 'mod_vision', 'name': 'Vision Timer', 'logo': 'vision_logo.png', 'color': '#aa82ff', 'old_port': 47615,
+     'desc': 'นับถอยหลังช่วง Vision ⇄ ช่วงพัก ลอยบนจอตลอดเวลา แม้ยังไม่ได้เปิดเกม · มีการ์ดบิ้วไว้ดูระหว่างเล่น',
+     'keys': 'Ctrl+Alt+V ซ่อน/แสดง · Ctrl+Alt+L ล็อกให้คลิกทะลุ · คลิกขวาที่การ์ด = เมนู'},
+    {'key': 'thai', 'mod': 'mod_thai', 'name': 'Thai Tooltip', 'logo': 'thai_tooltip.png', 'color': '#ff3c8c', 'old_port': 47616,
+     'desc': 'ชี้ปืน เกราะ ม็อด อาหารในเกม แล้วขึ้นคำแปลไทยข้างกล่องรายละเอียด · ทำงานเฉพาะตอนเกมอยู่หน้าจอ',
+     'keys': 'Ctrl+Alt+T เปิด/ปิดการแปล'},
+    {'key': 'build', 'mod': 'mod_build', 'name': 'Build Overlay', 'logo': 'build_overlay.png', 'color': '#3cd26e', 'old_port': 47617, 'new': True,
+     'desc': 'เลือกบิ้วจากเว็บ hub แล้วโชว์แถบเช็คในหน้า Gear ชิ้นไหนใส่ตรงบิ้วขึ้น ✓ · ทำงานเฉพาะตอนเกมอยู่หน้าจอ',
+     'keys': 'Ctrl+Alt+B ซ่อน/แสดงแถบ · คลิกชื่อ MOD = คัดลอกไปค้นในเกม'},
+]
+BYKEY = {m['key']: m for m in MODS}
+
+BG = '#0d1318'; CARD = '#151d25'; LINE = '#2a3644'; FG = '#e9eef2'; DIM = '#8a96a3'; TEAL = '#00dcd2'
+OKC = '#3ddc84'; BAD = '#ff7a45'; WARN = '#ffd54a'
+FONT = 'Leelawadee UI' if IS_WIN else 'DejaVu Sans'
+SCOL = {'ok': OKC, 'bad': BAD, 'warn': WARN, 'dim': DIM}
+
+
+def flag(key):
+    return (SET.get('flags') or {}).get(key, 'public')
+
+
+def vtuple(v):
+    try:
+        return tuple(int(x) for x in str(v).split('.'))
+    except Exception:
+        return (0,)
+
+
+# ───────────── เปิดพร้อม Windows ─────────────
+RUN_KEY = r'Software\Microsoft\Windows\CurrentVersion\Run'
+
+
+def set_autostart(on):
+    if not (IS_WIN and FROZEN):
+        return False
+    try:
+        import winreg
+        k = winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE)
+        if on:
+            winreg.SetValueEx(k, APP, 0, winreg.REG_SZ, f'"{sys.executable}" --tray')
+        else:
+            try:
+                winreg.DeleteValue(k, APP)
+            except FileNotFoundError:
+                pass
+        winreg.CloseKey(k)
+        return True
+    except Exception as e:
+        log('autostart', e)
+        return False
+
+
+# ───────────── ตัวควบคุมหลัก ─────────────
+class Host:
+    def __init__(self, root):
+        self.root = root
+        self.q = queue.Queue()
+        self.ctl = {}          # key -> ตัวควบคุมโมดูลที่เริ่มแล้ว
+        self.err = {}          # key -> ข้อความเมื่อเริ่มไม่ได้
+        self.locks = {}        # จองพอร์ตของโปรแกรมตัวเดิม กันเปิดซ้อน
+        self.tray = None
+        self.home = None
+        self.update = None     # {'ver', 'url'} เมื่อมีเวอร์ชันใหม่
+        self.main_thread = threading.get_ident()
+        self._toast_init()
+
+    # ── เรียกได้จากทุกเธรด
+    def call(self, fn):
+        self.q.put(('call', fn))
+
+    def toast(self, msg, ms=4000):
+        if threading.get_ident() == self.main_thread:
+            self._toast(msg, ms)
+        else:
+            self.q.put(('call', lambda: self._toast(msg, ms)))
+
+    def refresh(self):
+        self.q.put(('refresh', None))
+
+    def show_home(self):
+        self.q.put(('call', self._show_home))
+
+    def quit(self):
+        self.q.put(('call', self._quit))
+
+    def set_enabled(self, key, on):
+        if threading.get_ident() != self.main_thread:
+            self.q.put(('call', lambda: self.set_enabled(key, on)))
+            return
+        m = BYKEY[key]
+        if on and flag(key) == 'off':
+            self.toast(f'{m["name"]} ปิดใช้งานชั่วคราวจากเว็บ hub'); return
+        SET['mods'][key] = bool(on); save_set()
+        if on and key not in self.ctl:
+            self.start_mod(key)
+        c = self.ctl.get(key)
+        if c:
+            c.set_enabled(bool(on))
+        self._refresh()
+
+    # ── ภายใน (เธรดหน้าต่าง)
+    def _toast_init(self):
+        w = self.toast_w = tk.Toplevel(self.root)
+        w.overrideredirect(True); w.attributes('-topmost', True); w.withdraw()
+        w.configure(bg=BG, highlightthickness=1, highlightbackground=TEAL)
+        self.toast_l = tk.Label(w, bg=BG, fg=FG, font=(FONT, -15), padx=16, pady=10, justify='left')
+        self.toast_l.pack()
+        self.toast_job = None
+
+    def _toast(self, msg, ms):
+        w = self.toast_w
+        self.toast_l.config(text=msg); w.update_idletasks()
+        w.geometry(f'+{self.root.winfo_screenwidth() - w.winfo_reqwidth() - 24}+24')
+        w.deiconify(); w.lift()
+        clickthrough(w)
+        if self.toast_job:
+            self.root.after_cancel(self.toast_job)
+        self.toast_job = self.root.after(ms, w.withdraw)
+
+    def lock_port(self, key):
+        """จองพอร์ตของโปรแกรมตัวเดิม: ถ้าจองไม่ได้ = ตัวเดิมยังเปิดอยู่"""
+        if key in self.locks:
+            return True
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.bind(('127.0.0.1', BYKEY[key]['old_port'])); s.listen(4)
+            self.locks[key] = s
+            if key == 'vision':           # ตัวเดิมเปิด → ส่ง quit มาหาเรา แล้วปิดตัวเอง: รับแล้วทิ้ง
+                def eat():
+                    while True:
+                        try:
+                            c, _ = s.accept(); c.close()
+                        except Exception:
+                            return
+                threading.Thread(target=eat, daemon=True).start()
+            return True
+        except OSError:
+            return False
+
+    def start_mod(self, key):
+        m = BYKEY[key]
+        self.err.pop(key, None)
+        try:
+            if key == 'vision':
+                import mod_vision as V
+                for _ in range(15):            # mod_vision สั่งปิดตัวเดิมตอนโหลด รอให้ปล่อยพอร์ต
+                    if self.lock_port(key):
+                        break
+                    time.sleep(0.1)
+                V.start(self)
+
+                class VC:
+                    name = 'vision'
+                    enabled = lambda s: V.ENABLED[0]
+                    set_enabled = lambda s, on: V.set_enabled(on)
+                    actions = lambda s: V.actions()
+                    shutdown = lambda s: V.save_cfg()
+
+                    def status(s):
+                        if not V.ENABLED[0]:
+                            return 'ปิดอยู่', 'dim'
+                        try:
+                            t = V.tip_text()
+                        except Exception:
+                            t = ''
+                        return (t + (' · ซ่อนอยู่ (Ctrl+Alt+V)' if V.HIDDEN else ''), 'dim' if V.HIDDEN else 'ok')
+                self.ctl[key] = VC()
+            else:
+                if not self.lock_port(key):
+                    self.err[key] = (f'โปรแกรม OH {m["name"]} ตัวเดิมยังเปิดอยู่ · ปิดตัวเดิมก่อน '
+                                     '(คลิกขวาไอคอนในถาด → ออก) แล้วกดสวิตช์ใหม่')
+                    SET['mods'][key] = False; save_set()
+                    return
+                mod = __import__(m['mod'])
+                self.ctl[key] = mod.start(self.root, self)
+            log('started', key)
+        except Exception:
+            log('start', key, traceback.format_exc())
+            self.err[key] = 'เปิดไม่สำเร็จ · ดูรายละเอียดใน log (หน้าเกี่ยวกับ → เปิดโฟลเดอร์ข้อมูล)'
+            SET['mods'][key] = False; save_set()
+
+    def _refresh(self):
+        for k, c in self.ctl.items():          # ซิงก์กับปุ่มลัดของแต่ละโมดูล
+            try:
+                SET['mods'][k] = bool(c.enabled())
+            except Exception:
+                pass
+        if self.home:
+            self.home.update_cards()
+        if self.tray:
+            try:
+                self.tray.update_menu()
+            except Exception:
+                pass
+
+    def _show_home(self):
+        if not self.home:
+            self.home = Home(self)
+        self.home.show()
+
+    def _quit(self):
+        for c in self.ctl.values():
+            try:
+                c.shutdown()
+            except Exception:
+                pass
+        save_set()
+        try:
+            if self.tray:
+                self.tray.stop()
+        except Exception:
+            pass
+        try:
+            self.root.destroy()
+        finally:
+            os._exit(0)
+
+    def pump(self):
+        try:
+            for _ in range(200):
+                k, v = self.q.get_nowait()
+                try:
+                    if k == 'call':
+                        v()
+                    elif k == 'refresh':
+                        self._refresh()
+                except Exception:
+                    log('host', traceback.format_exc())
+        except queue.Empty:
+            pass
+        self.root.after(40, self.pump)
+
+    # ── ถาด
+    def start_tray(self):
+        try:
+            import pystray
+        except Exception as e:
+            log('no pystray', e); return
+        I, M = pystray.MenuItem, pystray.Menu
+
+        def run(fn):
+            return lambda icon, item: self.call(fn)
+
+        def conv(acts):
+            out = []
+            for a in acts:
+                if a is None:
+                    out.append(M.SEPARATOR)
+                elif isinstance(a[1], list):
+                    out.append(I(a[0], M(*conv(a[1]))))
+                else:
+                    lab, fn, chk = a
+                    out.append(I(lab, run(fn), checked=(lambda item, chk=chk: bool(chk())) if chk else None))
+            return out
+
+        def items():
+            it = [I(f'{APP} v{VERSION}', None, enabled=False),
+                  I('เปิดหน้าหลัก', run(self._show_home), default=True), M.SEPARATOR]
+            for m in MODS:
+                k = m['key']
+                if flag(k) == 'off':
+                    continue
+                sub = [I('เปิดใช้งาน', run(lambda k=k: self.set_enabled(k, not SET['mods'].get(k))),
+                         checked=lambda item, k=k: bool(SET['mods'].get(k)))]
+                c = self.ctl.get(k)
+                if c:
+                    try:
+                        sub += [M.SEPARATOR] + conv(c.actions())
+                    except Exception:
+                        log('menu', k, traceback.format_exc())
+                it.append(I(m['name'] + ('  (ปิด)' if not SET['mods'].get(k) else ''), M(*sub)))
+            it += [M.SEPARATOR,
+                   I('เปิดเว็บ MrSmitety Hub', lambda i, t: webbrowser.open(HUB + '/#oh-addons')),
+                   I('ออกจาก OH Companion', run(self._quit))]
+            return it
+
+        try:
+            img = Image.open(os.path.join(BASE, 'oh_companion.png')).convert('RGBA').resize((64, 64), Image.LANCZOS)
+            self.tray = pystray.Icon('ohcompanion', img, APP, M(items))
+            self.tray.run_detached()
+        except Exception:
+            log('tray', traceback.format_exc())
+
+        def tip():
+            try:
+                t = APP
+                v = self.ctl.get('vision')
+                if v and SET['mods'].get('vision'):
+                    t += ' · ' + v.status()[0][:50]
+                self.tray.title = t
+            except Exception:
+                pass
+            self.root.after(5000, tip)
+        tip()
+
+    # ── ค่าจากเว็บ: เวอร์ชันใหม่ + สวิตช์ฟีเจอร์ (companion_flags)
+    def web_check(self):
+        def job():
+            try:
+                r = urllib.request.urlopen(urllib.request.Request(
+                    HUB + '/addons/oh-companion.json?t=%d' % time.time(), headers={'User-Agent': f'OHCompanion/{VERSION}'}), timeout=10)
+                j = json.loads(r.read().decode('utf-8'))
+                if vtuple(j.get('ver')) > vtuple(VERSION):
+                    self.update = j
+                    self.call(lambda: (self.toast(f'OH Companion มีเวอร์ชันใหม่ {j["ver"]}\nเปิดหน้าหลักเพื่อดาวน์โหลด', 8000), self._refresh()))
+            except Exception as e:
+                log('update check', e)
+            try:
+                req = urllib.request.Request(SB_URL + '/rest/v1/app_settings?select=value&key=eq.companion_flags',
+                                             headers={'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY})
+                rows = json.load(urllib.request.urlopen(req, timeout=10))
+                fl = json.loads(rows[0]['value']) if rows and rows[0].get('value') else {}
+                if isinstance(fl, dict) and fl != SET.get('flags'):
+                    SET['flags'] = {k: str(v) for k, v in fl.items() if k in BYKEY}; save_set()
+
+                    def apply():
+                        for k in BYKEY:
+                            if flag(k) == 'off' and k in self.ctl:
+                                self.ctl[k].set_enabled(False)
+                        self._refresh()
+                    self.call(apply)
+            except Exception as e:
+                log('flags', e)
+        threading.Thread(target=job, daemon=True).start()
+        self.root.after(6 * 3600 * 1000, self.web_check)
+
+
+def clickthrough(win):
+    if not IS_WIN:
+        return
+    try:
+        u = ctypes.windll.user32
+        h = u.GetParent(win.winfo_id()) or win.winfo_id()
+        u.SetWindowLongW(h, -20, u.GetWindowLongW(h, -20) | 0x80000 | 0x20 | 0x80 | 0x08000000)
+    except Exception:
+        pass
+
+
+# ───────────── หน้าหลัก ─────────────
+class Switch(tk.Canvas):
+    def __init__(self, parent, color, command):
+        super().__init__(parent, width=52, height=28, bg=CARD, highlightthickness=0, bd=0, cursor='hand2')
+        self.color = color; self.on = False; self.command = command
+        self.bind('<Button-1>', lambda e: self.command(not self.on))
+
+    def set(self, on, enabled=True):
+        self.on = on
+        self.delete('all')
+        c = (self.color if on else '#3a4654') if enabled else '#262f38'
+        self.create_oval(2, 2, 26, 26, fill=c, outline=c); self.create_oval(26, 2, 50, 26, fill=c, outline=c)
+        self.create_rectangle(14, 2, 38, 26, fill=c, outline=c)
+        x = 38 if on else 14
+        self.create_oval(x - 10, 4, x + 10, 24, fill='#ffffff' if enabled else '#5b6672', outline='')
+
+
+class Home:
+    def __init__(self, host):
+        self.host = host
+        root = host.root
+        w = self.w = tk.Toplevel(root)
+        w.title(APP); w.configure(bg=BG); w.resizable(False, False)
+        try:
+            w.iconbitmap(os.path.join(BASE, 'oh_companion.ico'))
+        except Exception:
+            pass
+        w.protocol('WM_DELETE_WINDOW', self.close)
+        self.imgs = []
+        pad = dict(padx=18)
+
+        top = tk.Frame(w, bg=BG); top.pack(fill='x', pady=(16, 8), **pad)
+        lg = self.logo('oh_companion.png', 48)
+        if lg:
+            tk.Label(top, image=lg, bg=BG).pack(side='left')
+        tt = tk.Frame(top, bg=BG); tt.pack(side='left', padx=12)
+        tk.Label(tt, text=APP, bg=BG, fg=FG, font=(FONT, -22, 'bold')).pack(anchor='w')
+        tk.Label(tt, text=f'เครื่องมือเสริม Once Human · เวอร์ชัน {VERSION}', bg=BG, fg=DIM, font=(FONT, -13)).pack(anchor='w')
+
+        self.upd = tk.Frame(w, bg='#2a2410', highlightthickness=1, highlightbackground=WARN)
+        self.upd_l = tk.Label(self.upd, bg='#2a2410', fg=WARN, font=(FONT, -14), anchor='w')
+        self.upd_l.pack(side='left', padx=10, pady=6)
+        tk.Button(self.upd, text='ดาวน์โหลด', command=lambda: webbrowser.open(HUB + '/#oh-addons'), bg=WARN, fg='#1a1400',
+                  relief='flat', font=(FONT, -13, 'bold'), padx=10, cursor='hand2').pack(side='right', padx=8, pady=6)
+
+        self.box = tk.Frame(w, bg=BG); self.box.pack(fill='x', **pad)
+        self.cards = {}
+        for m in MODS:
+            self.cards[m['key']] = self.card(m)
+
+        bot = tk.Frame(w, bg=BG); bot.pack(fill='x', pady=(6, 4), **pad)
+        self.auto = tk.BooleanVar(value=bool(SET.get('autostart')))
+        cb = tk.Checkbutton(bot, text='เปิด OH Companion พร้อม Windows', variable=self.auto, command=self.toggle_auto,
+                            bg=BG, fg=FG, selectcolor=CARD, activebackground=BG, activeforeground=FG, font=(FONT, -13))
+        cb.pack(side='left')
+        if not FROZEN:
+            cb.config(state='disabled')
+        tk.Label(w, text='ปิดหน้าต่างนี้ได้ โปรแกรมยังทำงานอยู่ที่ไอคอนในถาด (มุมขวาล่างของ Taskbar)', bg=BG, fg=DIM,
+                 font=(FONT, -12)).pack(anchor='w', **pad)
+
+        ft = tk.Frame(w, bg=BG); ft.pack(fill='x', pady=(8, 14), **pad)
+        tk.Label(ft, text='สร้างโดย MrSmitety', bg=BG, fg=DIM, font=(FONT, -13)).pack(side='left')
+        lk = tk.Label(ft, text='hub.mrsmitety.com', bg=BG, fg=TEAL, font=(FONT, -13, 'underline'), cursor='hand2')
+        lk.pack(side='left', padx=8); lk.bind('<Button-1>', lambda e: webbrowser.open(HUB))
+        tk.Button(ft, text='ออกจากโปรแกรม', command=host._quit, bg=CARD, fg=DIM, relief='flat', font=(FONT, -12),
+                  padx=10, cursor='hand2', activebackground=LINE).pack(side='right')
+        tk.Button(ft, text='เกี่ยวกับ', command=self.about, bg=CARD, fg=FG, relief='flat', font=(FONT, -12),
+                  padx=10, cursor='hand2', activebackground=LINE).pack(side='right', padx=6)
+        self.update_cards()
+
+    def logo(self, fn, sz):
+        try:
+            im = ImageTk.PhotoImage(Image.open(os.path.join(BASE, fn)).convert('RGBA').resize((sz, sz), Image.LANCZOS))
+            self.imgs.append(im); return im
+        except Exception:
+            return None
+
+    def card(self, m):
+        k = m['key']
+        f = tk.Frame(self.box, bg=CARD, highlightthickness=1, highlightbackground=LINE)
+        f.pack(fill='x', pady=5)
+        lg = self.logo(m['logo'], 52)
+        if lg:
+            tk.Label(f, image=lg, bg=CARD).pack(side='left', padx=12, pady=12, anchor='n')
+        mid = tk.Frame(f, bg=CARD); mid.pack(side='left', fill='both', expand=True, pady=10)
+        hd = tk.Frame(mid, bg=CARD); hd.pack(anchor='w')
+        tk.Label(hd, text=m['name'], bg=CARD, fg=FG, font=(FONT, -17, 'bold')).pack(side='left')
+        badge = tk.Label(hd, text='', bg=CARD, fg='#052322', font=(FONT, -11, 'bold'), padx=7)
+        tk.Label(mid, text=m['desc'], bg=CARD, fg=DIM, font=(FONT, -13), wraplength=330, justify='left').pack(anchor='w', pady=(2, 0))
+        tk.Label(mid, text=m['keys'], bg=CARD, fg='#66727f', font=(FONT, -12), wraplength=330, justify='left').pack(anchor='w')
+        stl = tk.Label(mid, text='', bg=CARD, fg=DIM, font=(FONT, -13), wraplength=330, justify='left')
+        stl.pack(anchor='w', pady=(4, 0))
+        right = tk.Frame(f, bg=CARD); right.pack(side='right', padx=12, pady=12, anchor='n')
+        sw = Switch(right, m['color'], lambda on, k=k: self.host.set_enabled(k, on)); sw.pack(anchor='e')
+        b1 = tk.Button(right, text='ตั้งค่า ▾', bg=LINE, fg=FG, relief='flat', font=(FONT, -12), padx=8, cursor='hand2',
+                       activebackground='#36475a', activeforeground=FG)
+        b1.config(command=lambda k=k, b=b1: self.menu(k, b))
+        b1.pack(anchor='e', pady=(10, 0))
+        b2 = None
+        if k == 'build':
+            b2 = tk.Button(right, text='เลือกบิ้ว', bg=m['color'], fg='#062012', relief='flat', font=(FONT, -12, 'bold'),
+                           padx=8, cursor='hand2', command=lambda: self.pick())
+            b2.pack(anchor='e', pady=(6, 0))
+        return {'f': f, 'sw': sw, 'st': stl, 'badge': badge, 'b1': b1, 'b2': b2}
+
+    def pick(self):
+        if 'build' not in self.host.ctl:
+            self.host.set_enabled('build', True)
+        c = self.host.ctl.get('build')
+        if c:
+            c.pick()
+
+    def menu(self, k, btn):
+        c = self.host.ctl.get(k)
+        mn = tk.Menu(self.w, tearoff=0, font=(FONT, -13))
+        if not c:
+            mn.add_command(label='เปิดสวิตช์ก่อนถึงจะตั้งค่าได้', state='disabled')
+        else:
+            def fill(menu, acts):
+                for a in acts:
+                    if a is None:
+                        menu.add_separator()
+                    elif isinstance(a[1], list):
+                        sub = tk.Menu(menu, tearoff=0, font=(FONT, -13)); fill(sub, a[1]); menu.add_cascade(label=a[0], menu=sub)
+                    else:
+                        lab, fn, chk = a
+                        on = bool(chk()) if chk else False
+                        menu.add_command(label=('✓  ' if on else '     ') + lab if chk else '     ' + lab,
+                                         command=lambda fn=fn: (fn(), self.host.refresh()))
+            fill(mn, c.actions())
+        mn.tk_popup(btn.winfo_rootx(), btn.winfo_rooty() + btn.winfo_height())
+
+    def update_cards(self):
+        h = self.host
+        for m in MODS:
+            k = m['key']; c = self.cards[k]
+            if flag(k) == 'off':
+                c['f'].pack_forget(); continue
+            if not c['f'].winfo_manager():
+                c['f'].pack(fill='x', pady=5)
+            on = bool(SET['mods'].get(k))
+            c['sw'].set(on)
+            if k in h.err:
+                txt, tone = h.err[k], 'bad'
+            elif not on:
+                txt, tone = 'ปิดอยู่ · กดสวิตช์เพื่อเปิด', 'dim'
+            elif k in h.ctl:
+                try:
+                    txt, tone = h.ctl[k].status()
+                except Exception:
+                    txt, tone = '', 'dim'
+            else:
+                txt, tone = 'กำลังเปิด…', 'dim'
+            c['st'].config(text=('● ' + txt) if txt else '', fg=SCOL.get(tone, DIM))
+            fl = flag(k)
+            if fl == 'beta':
+                c['badge'].config(text='ทดลอง', bg=WARN); c['badge'].pack(side='left', padx=8)
+            elif m.get('new') and not SET.get('new_seen'):
+                c['badge'].config(text='ใหม่', bg=TEAL); c['badge'].pack(side='left', padx=8)
+            else:
+                c['badge'].pack_forget()
+        if h.update:
+            self.upd_l.config(text=f'มีเวอร์ชันใหม่ {h.update.get("ver")} · ดาวน์โหลดได้ที่หน้า Add-on')
+            if not self.upd.winfo_manager():
+                self.upd.pack(fill='x', padx=18, pady=(0, 6), before=self.box)
+
+    def tick(self):
+        if self.w.winfo_viewable():
+            self.update_cards()
+            self.w.after(1000, self.tick)
+
+    def show(self):
+        w = self.w
+        w.deiconify()
+        xy = SET.get('home_xy')
+        w.update_idletasks()
+        sw, sh = w.winfo_screenwidth(), w.winfo_screenheight()
+        if not xy or not (0 <= xy[0] < sw - 80 and 0 <= xy[1] < sh - 80):
+            xy = [(sw - w.winfo_reqwidth()) // 2, max(20, (sh - w.winfo_reqheight()) // 2)]
+        w.geometry('+%d+%d' % tuple(xy))
+        w.lift(); w.focus_force()
+        self.update_cards()
+        w.after(1000, self.tick)
+
+    def close(self):
+        try:
+            SET['home_xy'] = [self.w.winfo_x(), self.w.winfo_y()]
+        except Exception:
+            pass
+        SET['new_seen'] = True; save_set()
+        self.w.withdraw()
+        if SET.get('first'):
+            SET['first'] = False; save_set()
+            self.host.toast('OH Companion ยังทำงานอยู่ที่ไอคอนในถาด (มุมขวาล่าง)\nคลิกไอคอนเพื่อเปิดหน้าหลักอีกครั้ง', 6000)
+
+    def toggle_auto(self):
+        on = bool(self.auto.get())
+        if set_autostart(on):
+            SET['autostart'] = on; save_set()
+        else:
+            self.auto.set(not on)
+
+    def about(self):
+        d = tk.Toplevel(self.w); d.title('เกี่ยวกับ ' + APP); d.configure(bg=BG); d.resizable(False, False)
+        d.transient(self.w)
+        d.geometry('+%d+%d' % (self.w.winfo_rootx() + 20, self.w.winfo_rooty() + 40))
+        lg = self.logo('oh_companion.png', 72)
+        if lg:
+            tk.Label(d, image=lg, bg=BG).pack(pady=(18, 6))
+        tk.Label(d, text=f'{APP}  v{VERSION}', bg=BG, fg=FG, font=(FONT, -20, 'bold')).pack()
+        tk.Label(d, text='สร้างโดย MrSmitety', bg=BG, fg=TEAL, font=(FONT, -15, 'bold')).pack(pady=(2, 10))
+        txt = ('รวม Vision Timer · Thai Tooltip · Build Overlay ไว้ในโปรแกรมเดียว\n'
+               'ทุกส่วนอ่านจากภาพหน้าจออย่างเดียว ไม่แก้ไฟล์เกม ไม่อ่านหน่วยความจำ\n'
+               'และไม่กดปุ่มแทนผู้เล่น · ทีมงานเกมเป็นผู้ตัดสินเรื่องโปรแกรมภายนอกเสมอ\n\n'
+               'การตั้งค่าแต่ละส่วนเก็บไว้ที่ %APPDATA% (MrSmitetyVision, OHThaiTooltip,\n'
+               'OHBuildOverlay, OHCompanion) · ใช้ค่าเดิมจากโปรแกรมตัวเดิมต่อได้เลย')
+        tk.Label(d, text=txt, bg=BG, fg=DIM, font=(FONT, -13), justify='center').pack(padx=24)
+        bf = tk.Frame(d, bg=BG); bf.pack(pady=16)
+        for t, fn in (('เปิดเว็บ hub', lambda: webbrowser.open(HUB)),
+                      ('แจ้งปัญหา / สอบถาม', lambda: webbrowser.open(HUB + '/#oh-addons')),
+                      ('เปิดโฟลเดอร์ข้อมูล', lambda: os.startfile(DATA) if IS_WIN else None)):
+            tk.Button(bf, text=t, command=fn, bg=CARD, fg=FG, relief='flat', font=(FONT, -12), padx=10,
+                      cursor='hand2', activebackground=LINE).pack(side='left', padx=4)
+
+
+# ───────────── main ─────────────
+def main():
+    try:
+        lock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        lock.bind(('127.0.0.1', PORT)); lock.listen(2)
+    except OSError:
+        try:                                    # เปิดอยู่แล้ว → ให้ตัวที่เปิดอยู่โชว์หน้าหลัก
+            s = socket.create_connection(('127.0.0.1', PORT), timeout=1); s.sendall(b'show'); s.close()
+        except OSError:
+            pass
+        return
+
+    log('start', VERSION, sys.version.split()[0])
+    root = tk.Tk(); root.withdraw()
+    root.report_callback_exception = lambda et, ev, tb: log('callback', ''.join(traceback.format_exception(et, ev, tb)))
+    host = Host(root)
+    oc_ctx.MASTER = root; oc_ctx.HOST = host
+
+    def listen():
+        while True:
+            try:
+                c, _ = lock.accept()
+                if c.recv(16) == b'show':
+                    host.show_home()
+                c.close()
+            except Exception:
+                time.sleep(0.5)
+    threading.Thread(target=listen, daemon=True).start()
+
+    root.after(40, host.pump)
+    host.start_tray()
+    tray_only = '--tray' in sys.argv
+    if SET.get('first') or not tray_only:
+        host._show_home()
+    else:
+        host.toast('OH Companion ทำงานแล้ว · คลิกไอคอนในถาดเพื่อเปิดหน้าหลัก', 4000)
+
+    def boot():                                 # เปิดทีละโมดูล (Vision ก่อน เพราะต้องโชว์ตลอด)
+        for m in MODS:
+            k = m['key']
+            if SET['mods'].get(k) and flag(k) != 'off':
+                host.set_enabled(k, True)
+        host._refresh()
+    root.after(150, boot)
+    root.after(3000, host.web_check)
+    root.mainloop()
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception:
+        log('fatal', traceback.format_exc())
+        try:
+            from tkinter import messagebox
+            messagebox.showerror(APP, 'โปรแกรมหยุดทำงาน\nดูรายละเอียดที่\n' + LOG)
+        except Exception:
+            pass

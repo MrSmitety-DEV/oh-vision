@@ -1,0 +1,71 @@
+name: Build OH Companion
+
+# Release แยก (tag oh-companion-vX.Y.Z) ไม่ตั้งเป็น latest เพื่อไม่ให้ลิงก์ releases/latest ของ Thai Tooltip เปลี่ยน
+on:
+  push:
+    paths:
+      - 'oh-companion/**'
+      - '.github/workflows/build-oh-companion.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install
+        run: python -m pip install pyinstaller pillow pystray mss rapidfuzz numpy onnxruntime rapidocr==3.10.0
+
+      - name: Version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path "oh-companion/OH Companion.pyw" -Pattern "^VERSION = '([^']+)'").Matches[0].Groups[1].Value
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Smoke test (import modules)
+        working-directory: oh-companion
+        run: python -c "import oc_ctx, engine, detect, bo_read, bo_match, mod_thai, mod_build; print('ok')"
+
+      - name: Build exe
+        working-directory: oh-companion
+        run: >
+          python -m PyInstaller --noconfirm --clean --onefile --windowed
+          --name "OH-Companion" --icon oh_companion.ico --version-file version_info.txt
+          --add-data "oh_thai_db.json;." --add-data "oh_web.json;." --add-data "bo_data.json;." --add-data "hideic;hideic"
+          --add-data "oh_companion.png;." --add-data "oh_companion.ico;." --add-data "thai_tooltip.png;." --add-data "build_overlay.png;."
+          --add-data "vision_logo.png;." --add-data "vision.ico;."
+          --paths . --collect-all rapidocr --collect-all omegaconf --collect-all antlr4
+          --hidden-import PIL._tkinter_finder --hidden-import pystray._win32
+          --hidden-import oc_ctx --hidden-import mod_vision --hidden-import mod_thai --hidden-import mod_build
+          --hidden-import engine --hidden-import detect --hidden-import bo_read --hidden-import bo_match
+          --exclude-module PyQt5 --exclude-module PyQt6 --exclude-module PySide6 --exclude-module matplotlib
+          --exclude-module scipy --exclude-module pandas --exclude-module torch --exclude-module paddle
+          --exclude-module openvino --exclude-module tensorrt
+          "OH Companion.pyw"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OH-Companion
+          path: oh-companion/dist/OH-Companion.exe
+          retention-days: 14
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: oh-companion-v${{ steps.ver.outputs.version }}
+          name: OH Companion v${{ steps.ver.outputs.version }}
+          make_latest: false
+          body: |
+            รวม Vision Timer · Thai Tooltip · Build Overlay ไว้ในโปรแกรมเดียว ไอคอนในถาดอันเดียว เปิด/ปิดแต่ละส่วนได้จากหน้าหลัก
+            อ่านจากภาพหน้าจออย่างเดียว ไม่แตะไฟล์หรือหน่วยความจำเกม · เกมต้องเป็นโหมด Borderless/Windowed
+            สร้างโดย MrSmitety · https://hub.mrsmitety.com
+          files: oh-companion/dist/OH-Companion.exe
