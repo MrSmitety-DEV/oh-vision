@@ -2,7 +2,7 @@
 """OH Thai Tooltip — ชี้ที่ไอเทมใน Once Human แล้วขึ้นคำแปลไทยข้างกล่องรายละเอียด
 ทำงานจากภาพหน้าจออย่างเดียว: ไม่อ่านหน่วยความจำเกม ไม่แก้ไฟล์เกม ไม่ส่งปุ่มเข้าเกม
 by MrSmitety Hub"""
-VERSION = '0.8.0'
+VERSION = '0.8.1'
 APP = 'OH Thai Tooltip'
 PORT = 47616
 GAME_EXE = 'once_human.exe'
@@ -1175,6 +1175,12 @@ def main():
         root.after(40, pump)
 
     root.after(40, pump)
+    if not MEMBER_ED:                      # แจ้งว่ามี OH Companion แล้ว (เลือกย้ายหรือไม่ก็ได้)
+        try:
+            import oc_notice
+            oc_notice.check(root, 'OH Thai Tooltip', DATA, lambda: q.put(('quit', None)), log)
+        except Exception:
+            log('notice', traceback.format_exc())
     root.mainloop()
 
 

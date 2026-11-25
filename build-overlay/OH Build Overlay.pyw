@@ -2,7 +2,7 @@
 """OH Build Overlay — เลือกบิ้วจาก MrSmitety Hub แล้วโชว์เป็นแถบโปร่งในหน้าใส่ของของ Once Human
 ชิ้นไหนใส่ตรงบิ้วแล้วจะสว่างขึ้น · ทำงานจากภาพหน้าจออย่างเดียว: ไม่อ่านหน่วยความจำเกม ไม่แก้ไฟล์เกม ไม่ส่งปุ่มเข้าเกม
 by MrSmitety Hub"""
-VERSION = '0.2.1'
+VERSION = '0.2.2'
 APP = 'OH Build Overlay'
 PORT = 47617
 GAME_EXE = 'once_human.exe'
@@ -1017,6 +1017,11 @@ def main():
         root.after(50, pump)
 
     root.after(50, pump)
+    try:                                   # แจ้งว่ามี OH Companion แล้ว (เลือกย้ายหรือไม่ก็ได้)
+        import oc_notice
+        oc_notice.check(root, 'OH Build Overlay', DATA, lambda: q.put(('quit', None)), log)
+    except Exception:
+        log('notice', traceback.format_exc())
     root.mainloop()
 
 

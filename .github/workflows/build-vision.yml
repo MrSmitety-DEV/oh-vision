@@ -1,0 +1,58 @@
+name: Build OH-Vision Time Tracker
+
+# Release แยก (tag vision-vX.Y.Z) ไม่ตั้งเป็น latest
+on:
+  push:
+    paths:
+      - 'vision/**'
+      - '.github/workflows/build-vision.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install
+        run: python -m pip install pyinstaller pillow pystray
+
+      - name: Version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path "vision/OH-Vision Time Tracker.pyw" -Pattern "^VERSION = '([^']+)'").Matches[0].Groups[1].Value
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Build exe
+        working-directory: vision
+        run: >
+          python -m PyInstaller --noconfirm --clean --onefile --windowed
+          --name "OH-Vision-Time-Tracker" --icon vision.ico --add-data "vision.ico;."
+          --paths . --hidden-import oc_notice
+          --hidden-import PIL._tkinter_finder --hidden-import pystray._win32
+          --exclude-module numpy --exclude-module PIL.ImageQt --exclude-module PyQt5 --exclude-module PyQt6
+          --exclude-module PySide6 --exclude-module matplotlib --exclude-module scipy --exclude-module pandas
+          "OH-Vision Time Tracker.pyw"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OH-Vision-Time-Tracker
+          path: vision/dist/OH-Vision-Time-Tracker.exe
+          retention-days: 14
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: vision-v${{ steps.ver.outputs.version }}
+          name: OH-Vision Time Tracker v${{ steps.ver.outputs.version }}
+          make_latest: false
+          body: ตัวจับเวลา Vision ⇄ ช่วงพัก ลอยเหนือจอเกม Once Human · แนะนำให้ใช้ OH Companion ที่รวมทุกโปรแกรมไว้แล้ว
+          files: vision/dist/OH-Vision-Time-Tracker.exe
