@@ -18,7 +18,15 @@ def same(a, b, cut=88):
     a, b = squash(a), squash(b)
     if not a or not b:
         return False
-    return a == b or fuzz.ratio(a, b) >= cut
+    if a == b or fuzz.ratio(a, b) >= cut:
+        return True
+    # ชื่อยาวในแผงรายละเอียดเลื่อนวิ่ง (marquee) → อ่านได้ท่อนหลังต่อด้วยท่อนหน้า เช่น "etrayal Compound Bow - The"
+    # เทียบกับชื่อที่ต่อกันสองรอบ: ถ้าเป็นท่อนหนึ่งของวงชื่อเดียวกัน (ยาวพอ) ถือว่าเป็นชิ้นเดียวกัน
+    if len(a) >= 12 and len(b) >= 16 and len(a) <= len(b) + 4:
+        bb = b + b
+        if a in bb or fuzz.partial_ratio(a, bb) >= 93:
+            return True
+    return False
 
 
 def style_same(a, b):
@@ -253,7 +261,10 @@ class Build:
         msgs = []; col = 'ok'
         for k in keys:
             v = self.items[k]
-            if not v.get('suf') or not mod.get('suf') or suf_same(mod['suf'], v['suf']):
+            if v.get('suf') and not mod.get('suf'):
+                msgs.append(f"{v['label']}: MOD ถูก · ยังอ่าน Suffix ไม่เจอ (เลื่อนแผงขวาให้เห็นบรรทัด <...>)"); col = 'info'
+                continue
+            if not v.get('suf') or suf_same(mod['suf'], v['suf']):
                 status[k] = ('ok', mod.get('suf') or ''); msgs.append(f"✓ {v['label']} ตรงบิ้ว" + (f" <{mod['suf']}>" if mod.get('suf') else ''))
             else:
                 status[k] = ('bad', f"Suffix เป็น {mod['suf']}"); col = 'warn'

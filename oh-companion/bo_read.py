@@ -10,7 +10,7 @@ REG = {
     'nav':    (0.28, 0.00, 0.78, 0.06),    # แถบเมนูบน: Backpack Gear Tech ... / Weapon Crafting Armor Crafting
     'panel':  (0.725, 0.20, 0.97, 0.88),   # แผงรายละเอียดขวา (ปืน/เกราะ)
     'footer': (0.60, 0.94, 0.99, 0.99),    # ปุ่มล่าง: Equip / Unequip
-    'modp':   (0.735, 0.24, 0.97, 0.46),   # แผง Core Effects ของ MOD
+    'modp':   (0.735, 0.24, 0.97, 0.80),   # แผง Core Effects + Attribute (Suffix) ของ MOD · คำอธิบายยาวดัน Suffix ลงไปถึง ~0.6
     'rows':   (0.08, 0.14, 0.24, 0.86),    # หัวแถวชื่อ MOD (ตัวอักษรห่างๆ)
     'modhead': (0.085, 0.135, 0.5, 0.188), # หัวข้อหมวด เช่น "The Bull's Eye Mod"
 }

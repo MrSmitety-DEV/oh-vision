@@ -2,7 +2,7 @@
 """OH Build Overlay — เลือกบิ้วจาก MrSmitety Hub แล้วโชว์เป็นแถบโปร่งในหน้าใส่ของของ Once Human
 ชิ้นไหนใส่ตรงบิ้วแล้วจะสว่างขึ้น · ทำงานจากภาพหน้าจออย่างเดียว: ไม่อ่านหน่วยความจำเกม ไม่แก้ไฟล์เกม ไม่ส่งปุ่มเข้าเกม
 by MrSmitety Hub"""
-VERSION = '0.2.2'
+VERSION = '0.2.3'
 APP = 'OH Build Overlay'
 PORT = 47617
 GAME_EXE = 'once_human.exe'
