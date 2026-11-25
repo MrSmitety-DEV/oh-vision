@@ -18,7 +18,7 @@ SHA-256: `3d2cf1db28d5f5b6ede23ac7340539b1b774cac7dc018ea00a569dd2bcfabbc0`
 ---
 
 ## OH Thai Tooltip
-ชี้ไอเทม (ปืน เกราะ ม็อด อาหาร) ใน Once Human แล้วขึ้นคำแปลไทยข้างกล่องรายละเอียด อ่านจากภาพหน้าจอเท่านั้น ไม่แตะไฟล์หรือหน่วยความจำเกม
+ชี้ไอเทม (ปืน เกราะ ม็อด) ใน Once Human แล้วขึ้นคำแปลไทยข้างกล่องรายละเอียด อ่านจากภาพหน้าจอเท่านั้น ไม่แตะไฟล์หรือหน่วยความจำเกม
 
 **ดาวน์โหลด:** [OH-Thai-Tooltip.exe (เวอร์ชันล่าสุด)](https://github.com/MrSmitety-DEV/oh-vision/releases/latest/download/OH-Thai-Tooltip.exe)
 
