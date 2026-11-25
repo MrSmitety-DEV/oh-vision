@@ -5,7 +5,7 @@
   • Build Overlay  เช็คของที่ใส่ในหน้า Gear เทียบกับบิ้วจากเว็บ (ทำงานเฉพาะตอนเกมอยู่หน้าจอ)
 ทุกโมดูลอ่านจากภาพหน้าจออย่างเดียว: ไม่อ่านหน่วยความจำเกม ไม่แก้ไฟล์เกม ไม่ส่งปุ่มเข้าเกม
 สร้างโดย MrSmitety · hub.mrsmitety.com"""
-VERSION = '1.0.0'
+VERSION = '1.0.1'
 APP = 'OH Companion'
 PORT = 47618
 HUB = 'https://hub.mrsmitety.com'
@@ -58,7 +58,7 @@ import oc_ctx
 # ───────────── ตั้งค่า ─────────────
 SET_PATH = os.path.join(DATA, 'settings.json')
 DEFAULT = {'mods': {'vision': True, 'thai': True, 'build': True}, 'first': True, 'new_seen': False,
-           'autostart': False, 'flags': {}, 'home_xy': None}
+           'autostart': False, 'flags': {}, 'home_xy': None, 'home_on_start': False}
 
 
 def load_set():
@@ -451,6 +451,7 @@ class Home:
         except Exception:
             pass
         w.protocol('WM_DELETE_WINDOW', self.close)
+        w.bind('<Unmap>', self.on_unmap)          # กดย่อ (_) = ซ่อนไปที่ถาด ไม่ค้างใน Taskbar
         self.imgs = []
         pad = dict(padx=18)
 
@@ -480,6 +481,11 @@ class Home:
         cb.pack(side='left')
         if not FROZEN:
             cb.config(state='disabled')
+        self.hos = tk.BooleanVar(value=bool(SET.get('home_on_start')))
+        tk.Checkbutton(w, text='เปิดหน้านี้ทุกครั้งที่เปิดโปรแกรม (ไม่ติ๊ก = เปิดแล้วไปอยู่ในถาดเลย)', variable=self.hos,
+                       command=lambda: (SET.update(home_on_start=bool(self.hos.get())), save_set()),
+                       bg=BG, fg=FG, selectcolor=CARD, activebackground=BG, activeforeground=FG,
+                       font=(FONT, -13)).pack(anchor='w', **pad)
         tk.Label(w, text='ปิดหน้าต่างนี้ได้ โปรแกรมยังทำงานอยู่ที่ไอคอนในถาด (มุมขวาล่างของ Taskbar)', bg=BG, fg=DIM,
                  font=(FONT, -12)).pack(anchor='w', **pad)
 
@@ -489,6 +495,8 @@ class Home:
         lk.pack(side='left', padx=8); lk.bind('<Button-1>', lambda e: webbrowser.open(HUB))
         tk.Button(ft, text='ออกจากโปรแกรม', command=host._quit, bg=CARD, fg=DIM, relief='flat', font=(FONT, -12),
                   padx=10, cursor='hand2', activebackground=LINE).pack(side='right')
+        tk.Button(ft, text='ซ่อนไปที่ถาด', command=self.close, bg=TEAL, fg='#052322', relief='flat', font=(FONT, -12, 'bold'),
+                  padx=10, cursor='hand2', activebackground='#33e6de').pack(side='right', padx=(6, 0))
         tk.Button(ft, text='เกี่ยวกับ', command=self.about, bg=CARD, fg=FG, relief='flat', font=(FONT, -12),
                   padx=10, cursor='hand2', activebackground=LINE).pack(side='right', padx=6)
         self.update_cards()
@@ -614,9 +622,21 @@ class Home:
             pass
         SET['new_seen'] = True; save_set()
         self.w.withdraw()
-        if SET.get('first'):
-            SET['first'] = False; save_set()
-            self.host.toast('OH Companion ยังทำงานอยู่ที่ไอคอนในถาด (มุมขวาล่าง)\nคลิกไอคอนเพื่อเปิดหน้าหลักอีกครั้ง', 6000)
+        if not SET.get('tray_tip_shown'):
+            SET['tray_tip_shown'] = True; SET['first'] = False; save_set()
+            self.host.toast('OH Companion ซ่อนไปที่ถาดแล้ว (มุมขวาล่าง ถ้าไม่เห็นดูในลูกศร ^)\nคลิกไอคอน OH เพื่อเปิดหน้านี้อีกครั้ง', 6000)
+
+    def on_unmap(self, e):
+        if e.widget is not self.w:
+            return
+
+        def chk():
+            try:
+                if self.w.state() == 'iconic':
+                    self.close()
+            except Exception:
+                pass
+        self.w.after(60, chk)
 
     def toggle_auto(self):
         on = bool(self.auto.get())
@@ -680,8 +700,9 @@ def main():
     root.after(40, host.pump)
     host.start_tray()
     tray_only = '--tray' in sys.argv
-    if SET.get('first') or not tray_only:
+    if SET.get('first') or (SET.get('home_on_start') and not tray_only):
         host._show_home()
+        SET['first'] = False; save_set()
     else:
         host.toast('OH Companion ทำงานแล้ว · คลิกไอคอนในถาดเพื่อเปิดหน้าหลัก', 4000)
 
